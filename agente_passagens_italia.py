@@ -134,14 +134,19 @@ def montar_links(pedido: PedidoViagem) -> dict[str, str]:
     origem_busca = quote_plus(origem["nome"])
     destino_busca = quote_plus(destino["nome"])
     data = quote_plus(pedido.data_ida)
-    google_flights = "https://www.google.com/travel/flights?q=" + quote_plus(
-        f"{origem['iata']} to {destino['iata']} {pedido.data_ida}"
-    )
+    consulta_voo = f"{origem['iata']} to {destino['iata']} {pedido.data_ida}"
+    kayak_trecho = f"{origem['iata']}-{destino['iata']}/{pedido.data_ida}"
+
+    if pedido.data_volta:
+        consulta_voo += f" return {pedido.data_volta}"
+        kayak_trecho += f"/{pedido.data_volta}"
+
+    google_flights = "https://www.google.com/travel/flights?q=" + quote_plus(consulta_voo)
 
     if not rota_interna_italia(origem, destino):
         return {
             "Google Flights": google_flights,
-            "Kayak": "https://www.kayak.com.br/flights/" + quote_plus(f"{origem['iata']}-{destino['iata']}/{pedido.data_ida}"),
+            "Kayak": "https://www.kayak.com.br/flights/" + quote_plus(kayak_trecho),
             "Rome2Rio": f"https://www.rome2rio.com/map/{origem_busca}/{destino_busca}",
         }
 
