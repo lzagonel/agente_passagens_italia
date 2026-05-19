@@ -22,12 +22,43 @@ def carregar_config(caminho: Path) -> dict:
     return json.loads(caminho.read_text(encoding="utf-8"))
 
 
+def validar_data_se_preenchida(valor: str, campo: str) -> str:
+    return validar_data(valor, campo) if valor else ""
+
+
+def descrever_janela(rota: dict, prefixo: str) -> str:
+    data_fixa = rota.get(f"data_{prefixo}", "")
+    if data_fixa:
+        return validar_data(data_fixa, f"data_{prefixo}")
+
+    inicio = validar_data_se_preenchida(rota.get(f"data_{prefixo}_inicio", ""), f"data_{prefixo}_inicio")
+    fim = validar_data_se_preenchida(rota.get(f"data_{prefixo}_fim", ""), f"data_{prefixo}_fim")
+
+    if inicio and fim:
+        return f"{inicio} a {fim}"
+    if inicio:
+        return f"a partir de {inicio}"
+    if fim:
+        return f"ate {fim}"
+    return "flexivel"
+
+
+def data_para_busca(rota: dict, prefixo: str) -> str:
+    data_fixa = rota.get(f"data_{prefixo}", "")
+    if data_fixa:
+        return validar_data(data_fixa, f"data_{prefixo}")
+
+    inicio = validar_data_se_preenchida(rota.get(f"data_{prefixo}_inicio", ""), f"data_{prefixo}_inicio")
+    fim = validar_data_se_preenchida(rota.get(f"data_{prefixo}_fim", ""), f"data_{prefixo}_fim")
+    return inicio or fim or ""
+
+
 def montar_pedido(config: dict, rota: dict) -> PedidoViagem:
     return PedidoViagem(
         origem=rota["origem"],
         destino=rota["destino"],
-        data_ida=validar_data(rota["data_ida"], "data_ida"),
-        data_volta=validar_data(rota.get("data_volta", ""), "data_volta"),
+        data_ida=data_para_busca(rota, "ida"),
+        data_volta=data_para_busca(rota, "volta"),
         viajantes=int(rota.get("viajantes", config.get("viajantes", 1))),
         preferencia=rota.get("preferencia", config.get("preferencia", "menor preco")),
         bagagem=rota.get("bagagem", config.get("bagagem", "bagagem leve")),
@@ -90,6 +121,9 @@ def montar_dados_monitoramento(config: dict, consultar_web: bool) -> dict:
             "origem": pedido.origem,
             "destino": pedido.destino,
             "data_ida": pedido.data_ida,
+            "janela_ida": descrever_janela(rota, "ida"),
+            "data_volta": pedido.data_volta,
+            "janela_volta": descrever_janela(rota, "volta"),
             "viajantes": pedido.viajantes,
             "preferencia": pedido.preferencia,
             "preco_alvo": preco_alvo,
@@ -143,7 +177,8 @@ def gerar_relatorio_monitoramento(config: dict, consultar_web: bool = False) -> 
             [
                 f"{indice}. {rota['nome']}",
                 f"   Rota: {rota['origem']} -> {rota['destino']}",
-                f"   Data: {rota['data_ida']}",
+                f"   Ida: {rota['janela_ida']}",
+                f"   Volta: {rota['janela_volta']}",
                 f"   Viajantes: {rota['viajantes']}",
                 f"   Preferencia: {rota['preferencia']}",
                 f"   Monitoramento: {alerta}",
