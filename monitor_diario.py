@@ -15,7 +15,7 @@ from agente_passagens_italia import PedidoViagem, escolher_modal, montar_links, 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PADRAO = BASE_DIR / "dados" / "rotas_monitoramento.json"
 RESULTADOS_DIR = BASE_DIR / "resultados"
-PRECO_RE = re.compile(r"(?:EUR|\u20ac)\s*([0-9]+(?:[.,][0-9]{1,2})?)", re.IGNORECASE)
+PRECO_RE = re.compile(r"(?:EUR|BRL|R\$|\u20ac)\s*((?:[0-9]{1,3}(?:[.,][0-9]{3})+|[0-9]+)(?:[.,][0-9]{1,2})?)", re.IGNORECASE)
 
 
 def carregar_config(caminho: Path) -> dict:
