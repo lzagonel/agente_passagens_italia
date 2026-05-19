@@ -10,17 +10,17 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 
-CIDADES_ITALIA = {
-    "curitiba": {"nome": "Curitiba", "estacao": "Curitiba", "iata": "CWB"},
-    "roma": {"nome": "Roma", "estacao": "Roma Termini", "iata": "FCO"},
-    "florenca": {"nome": "Florenca", "estacao": "Firenze Santa Maria Novella", "iata": "FLR"},
-    "veneza": {"nome": "Veneza", "estacao": "Venezia Santa Lucia", "iata": "VCE"},
-    "milao": {"nome": "Milao", "estacao": "Milano Centrale", "iata": "MXP"},
-    "napoles": {"nome": "Napoles", "estacao": "Napoli Centrale", "iata": "NAP"},
-    "bolonha": {"nome": "Bolonha", "estacao": "Bologna Centrale", "iata": "BLQ"},
-    "pisa": {"nome": "Pisa", "estacao": "Pisa Centrale", "iata": "PSA"},
-    "turim": {"nome": "Turim", "estacao": "Torino Porta Nuova", "iata": "TRN"},
-    "verona": {"nome": "Verona", "estacao": "Verona Porta Nuova", "iata": "VRN"},
+CIDADES = {
+    "curitiba": {"nome": "Curitiba", "estacao": "Curitiba", "iata": "CWB", "pais": "BR"},
+    "roma": {"nome": "Roma", "estacao": "Roma Termini", "iata": "FCO", "pais": "IT"},
+    "florenca": {"nome": "Florenca", "estacao": "Firenze Santa Maria Novella", "iata": "FLR", "pais": "IT"},
+    "veneza": {"nome": "Veneza", "estacao": "Venezia Santa Lucia", "iata": "VCE", "pais": "IT"},
+    "milao": {"nome": "Milao", "estacao": "Milano Centrale", "iata": "MXP", "pais": "IT"},
+    "napoles": {"nome": "Napoles", "estacao": "Napoli Centrale", "iata": "NAP", "pais": "IT"},
+    "bolonha": {"nome": "Bolonha", "estacao": "Bologna Centrale", "iata": "BLQ", "pais": "IT"},
+    "pisa": {"nome": "Pisa", "estacao": "Pisa Centrale", "iata": "PSA", "pais": "IT"},
+    "turim": {"nome": "Turim", "estacao": "Torino Porta Nuova", "iata": "TRN", "pais": "IT"},
+    "verona": {"nome": "Verona", "estacao": "Verona Porta Nuova", "iata": "VRN", "pais": "IT"},
 }
 
 TRECHOS_TREM_FORTES = {
@@ -98,7 +98,11 @@ def perguntar() -> PedidoViagem:
 
 
 def cidade_conhecida(cidade: str) -> dict[str, str] | None:
-    return CIDADES_ITALIA.get(normalizar_cidade(cidade))
+    return CIDADES.get(normalizar_cidade(cidade))
+
+
+def rota_interna_italia(origem: dict[str, str] | None, destino: dict[str, str] | None) -> bool:
+    return bool(origem and destino and origem.get("pais") == "IT" and destino.get("pais") == "IT")
 
 
 def escolher_modal(pedido: PedidoViagem) -> tuple[str, list[str]]:
@@ -110,36 +114,43 @@ def escolher_modal(pedido: PedidoViagem) -> tuple[str, list[str]]:
     destino_ok = cidade_conhecida(pedido.destino)
     motivos = []
 
-    if origem_ok and destino_ok and (par in TRECHOS_TREM_FORTES or par_inverso in TRECHOS_TREM_FORTES):
+    if not rota_interna_italia(origem_ok, destino_ok):
+        motivos.append("rota internacional; voo deve ser a fonte principal")
+        motivos.append("comparar conexoes, bagagem e chegada em FCO")
+        return "voo internacional", motivos
+
+    if par in TRECHOS_TREM_FORTES or par_inverso in TRECHOS_TREM_FORTES:
         motivos.append("trecho italiano bem servido por trem rapido")
         motivos.append("evita deslocamento e antecedencia de aeroporto")
         return "trem", motivos
 
-    if origem_ok and destino_ok:
-        motivos.append("rota interna na Italia; comparar trem antes de voo costuma valer a pena")
-        return "comparar trem e onibus", motivos
-
-    motivos.append("origem ou destino fora da base de cidades italianas do agente")
-    motivos.append("comparar voo com conexoes terrestres")
-    return "voo ou multimodal", motivos
+    motivos.append("rota interna na Italia; comparar trem antes de voo costuma valer a pena")
+    return "comparar trem e onibus", motivos
 
 
 def montar_links(pedido: PedidoViagem) -> dict[str, str]:
-    origem = cidade_conhecida(pedido.origem) or {"nome": pedido.origem, "estacao": pedido.origem, "iata": pedido.origem}
-    destino = cidade_conhecida(pedido.destino) or {"nome": pedido.destino, "estacao": pedido.destino, "iata": pedido.destino}
+    origem = cidade_conhecida(pedido.origem) or {"nome": pedido.origem, "estacao": pedido.origem, "iata": pedido.origem, "pais": ""}
+    destino = cidade_conhecida(pedido.destino) or {"nome": pedido.destino, "estacao": pedido.destino, "iata": pedido.destino, "pais": ""}
     origem_busca = quote_plus(origem["nome"])
     destino_busca = quote_plus(destino["nome"])
     data = quote_plus(pedido.data_ida)
+    google_flights = "https://www.google.com/travel/flights?q=" + quote_plus(
+        f"{origem['iata']} to {destino['iata']} {pedido.data_ida}"
+    )
+
+    if not rota_interna_italia(origem, destino):
+        return {
+            "Google Flights": google_flights,
+            "Kayak": "https://www.kayak.com.br/flights/" + quote_plus(f"{origem['iata']}-{destino['iata']}/{pedido.data_ida}"),
+            "Rome2Rio": f"https://www.rome2rio.com/map/{origem_busca}/{destino_busca}",
+        }
 
     return {
         "Trenitalia": "https://www.trenitalia.com/",
         "Italo": "https://www.italotreno.it/en",
         "Omio": f"https://www.omio.com/search-frontend/results/{origem_busca}/{destino_busca}/{data}",
         "Rome2Rio": f"https://www.rome2rio.com/map/{origem_busca}/{destino_busca}",
-        "Google Flights": (
-            "https://www.google.com/travel/flights?q="
-            + quote_plus(f"{origem['iata']} to {destino['iata']} {pedido.data_ida}")
-        ),
+        "Google Flights": google_flights,
     }
 
 
@@ -182,11 +193,9 @@ def gerar_relatorio(pedido: PedidoViagem) -> str:
 
 def abrir_pesquisas(pedido: PedidoViagem) -> None:
     links = montar_links(pedido)
-    principais = ["Trenitalia", "Italo", "Omio", "Rome2Rio", "Google Flights"]
 
     print("\nAbrindo pesquisas no navegador...")
-    for nome in principais:
-        url = links[nome]
+    for nome, url in links.items():
         print(f"- {nome}: {url}")
         webbrowser.open(url, new=2)
 
