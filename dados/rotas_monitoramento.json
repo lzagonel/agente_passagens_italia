@@ -1,0 +1,17 @@
+{
+  "moeda": "EUR",
+  "viajantes": 2,
+  "preferencia": "menor preco com bom horario",
+  "bagagem": "mochila + mala pequena",
+  "janela_horario": "manha",
+  "rotas": [
+    {
+      "ativa": true,
+      "nome": "Roma para Florenca",
+      "origem": "Roma",
+      "destino": "Florenca",
+      "data_ida": "2026-06-12",
+      "preco_alvo": 40
+    }
+  ]
+}
