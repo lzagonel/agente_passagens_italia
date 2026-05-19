@@ -11,6 +11,7 @@ from urllib.parse import quote_plus
 
 
 CIDADES_ITALIA = {
+    "curitiba": {"nome": "Curitiba", "estacao": "Curitiba", "iata": "CWB"},
     "roma": {"nome": "Roma", "estacao": "Roma Termini", "iata": "FCO"},
     "florenca": {"nome": "Florenca", "estacao": "Firenze Santa Maria Novella", "iata": "FLR"},
     "veneza": {"nome": "Veneza", "estacao": "Venezia Santa Lucia", "iata": "VCE"},
