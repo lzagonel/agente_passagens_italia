@@ -1,0 +1,5 @@
+# Projeto inicial sem dependencias obrigatorias.
+# Futuras integracoes podem adicionar:
+# playwright
+# pandas
+# python-dotenv
