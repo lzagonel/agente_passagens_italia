@@ -2,6 +2,14 @@ name: Monitor de passagens Italia
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "dados/rotas_monitoramento.json"
+      - "monitor_diario.py"
+      - "agente_passagens_italia.py"
+      - ".github/workflows/monitor-passagens.yml"
   schedule:
     # 08:00, 14:00 e 20:00 no horario de Sao Paulo (UTC-3).
     - cron: "0 11,17,23 * * *"
