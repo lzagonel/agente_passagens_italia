@@ -1,0 +1,10 @@
+{
+  "origem": "Roma",
+  "destino": "Florenca",
+  "data_ida": "2026-06-12",
+  "data_volta": "",
+  "viajantes": 2,
+  "preferencia": "menor tempo total",
+  "bagagem": "mochila + mala pequena",
+  "janela_horario": "manha"
+}
