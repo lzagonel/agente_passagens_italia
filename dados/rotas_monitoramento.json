@@ -1,14 +1,23 @@
 {
-  "ativa": true,
-  "nome": "Curitiba para Roma",
-  "origem": "Curitiba",
-  "destino": "Roma",
-  "data_ida_inicio": "2026-08-25",
-  "data_ida_fim": "2026-08-30",
-  "data_volta_inicio": "2026-09-10",
-  "data_volta_fim": "2026-09-15",
-  "preco_alvo": 4500,
+  "moeda": "BRL",
+  "viajantes": 2,
   "preferencia": "menor preco com bagagem",
   "bagagem": "mala despachada + mochila",
-  "janela_horario": "qualquer horario"
+  "janela_horario": "qualquer horario",
+  "rotas": [
+    {
+      "ativa": true,
+      "nome": "Curitiba para Roma",
+      "origem": "Curitiba",
+      "destino": "Roma",
+      "data_ida_inicio": "2026-08-25",
+      "data_ida_fim": "2026-08-30",
+      "data_volta_inicio": "2026-09-10",
+      "data_volta_fim": "2026-09-15",
+      "preco_alvo": 4500,
+      "preferencia": "menor preco com bagagem",
+      "bagagem": "mala despachada + mochila",
+      "janela_horario": "qualquer horario"
+    }
+  ]
 }
