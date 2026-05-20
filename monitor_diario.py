@@ -139,6 +139,39 @@ def extrair_precos_json(valor: object) -> list[float]:
     return precos
 
 
+def extrair_opcoes_serpapi(dados: dict, data_ida: str, data_volta: str, max_escalas: int | None) -> list[dict]:
+    opcoes = []
+    for grupo in ("best_flights", "other_flights"):
+        for voo in dados.get(grupo, []) or []:
+            preco = normalizar_preco_generico(voo.get("price") or voo.get("total_price"))
+            trechos = voo.get("flights") or []
+            escalas = max(len(trechos) - 1, 0)
+
+            if preco is None:
+                continue
+            if max_escalas is not None and escalas > max_escalas:
+                continue
+
+            companhias = []
+            for trecho in trechos:
+                companhia = trecho.get("airline")
+                if companhia and companhia not in companhias:
+                    companhias.append(companhia)
+
+            opcoes.append(
+                {
+                    "preco": preco,
+                    "data_ida": data_ida,
+                    "data_volta": data_volta,
+                    "escalas": escalas,
+                    "companhias": ", ".join(companhias) if companhias else "nao informado",
+                    "duracao_min": voo.get("total_duration"),
+                }
+            )
+
+    return sorted(opcoes, key=lambda opcao: opcao["preco"])
+
+
 def consultar_serpapi_voos(pedido: PedidoViagem, rota: dict, moeda: str, api_key: str) -> list[dict]:
     origem = cidade_conhecida(pedido.origem)
     destino = cidade_conhecida(pedido.destino)
@@ -148,6 +181,8 @@ def consultar_serpapi_voos(pedido: PedidoViagem, rota: dict, moeda: str, api_key
     idas = datas_da_rota(rota, "ida")
     voltas = datas_da_rota(rota, "volta") or [""]
     max_consultas = int(rota.get("max_consultas_serpapi", 12))
+    max_escalas = rota.get("max_escalas")
+    max_escalas = int(max_escalas) if max_escalas is not None else None
     resultados = []
 
     for data_ida in idas:
@@ -187,7 +222,8 @@ def consultar_serpapi_voos(pedido: PedidoViagem, rota: dict, moeda: str, api_key
                     dados = json.loads(resposta.read().decode("utf-8"))
                 if "error" in dados:
                     item["erro"] = str(dados["error"])
-                item["precos"] = sorted(set(extrair_precos_json(dados)))[:10]
+                item["opcoes"] = extrair_opcoes_serpapi(dados, data_ida, data_volta, max_escalas)
+                item["precos"] = [opcao["preco"] for opcao in item["opcoes"]]
             except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
                 item["erro"] = str(exc)
 
@@ -230,6 +266,8 @@ def montar_dados_monitoramento(config: dict, consultar_web: bool) -> dict:
         modal, motivos = escolher_modal(pedido)
         fontes = consultar_fontes(pedido, rota, dados["moeda"], consultar_web, serpapi_key)
         precos = [preco for fonte in fontes for preco in fonte["precos"]]
+        opcoes = [opcao for fonte in fontes for opcao in fonte.get("opcoes", [])]
+        opcoes_ordenadas = sorted(opcoes, key=lambda opcao: opcao["preco"])
         menor_preco = min(precos) if precos else None
         preco_alvo = rota.get("preco_alvo")
         alerta = bool(menor_preco is not None and preco_alvo is not None and menor_preco <= float(preco_alvo))
@@ -248,6 +286,7 @@ def montar_dados_monitoramento(config: dict, consultar_web: bool) -> dict:
             "recomendacao_base": modal,
             "motivos": motivos,
             "fontes": fontes,
+            "melhores_opcoes": opcoes_ordenadas[: int(rota.get("max_opcoes_relatorio", 3))],
             "menor_preco": menor_preco,
             "alerta_preco": alerta,
         }
@@ -309,9 +348,21 @@ def gerar_relatorio_monitoramento(config: dict, consultar_web: bool = False) -> 
         )
 
         for fonte in rota["fontes"]:
-            precos = ", ".join(f"{moeda} {preco:.2f}" for preco in fonte["precos"])
-            status = precos if precos else "sem preco extraido automaticamente"
-            linhas.append(f"   - {fonte['fonte']}: {status} | {fonte['url']}")
+            if fonte.get("opcoes"):
+                linhas.append(f"   - {fonte['fonte']}: {len(fonte['opcoes'])} opcoes dentro dos filtros")
+            else:
+                status = fonte["erro"] if fonte.get("erro") else "sem preco extraido automaticamente"
+                linhas.append(f"   - {fonte['fonte']}: {status} | {fonte['url']}")
+
+        if rota.get("melhores_opcoes"):
+            linhas.append("   Melhores opcoes:")
+            for posicao, opcao in enumerate(rota["melhores_opcoes"], start=1):
+                volta = f" / volta {opcao['data_volta']}" if opcao["data_volta"] else ""
+                duracao = f", duracao {opcao['duracao_min']} min" if opcao.get("duracao_min") else ""
+                linhas.append(
+                    f"   {posicao}. {moeda} {opcao['preco']:.2f} | ida {opcao['data_ida']}{volta} | "
+                    f"{opcao['escalas']} escala(s) | {opcao['companhias']}{duracao}"
+                )
 
         linhas.append("")
 
