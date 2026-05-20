@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import re
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
-from agente_passagens_italia import PedidoViagem, escolher_modal, montar_links, validar_data
+from agente_passagens_italia import PedidoViagem, cidade_conhecida, escolher_modal, montar_links, rota_interna_italia, validar_data
 
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PADRAO = BASE_DIR / "dados" / "rotas_monitoramento.json"
 RESULTADOS_DIR = BASE_DIR / "resultados"
-PRECO_RE = re.compile(r"(?:EUR|BRL|R\$|\u20ac)\s*((?:[0-9]{1,3}(?:[.,][0-9]{3})+|[0-9]+)(?:[.,][0-9]{1,2})?)", re.IGNORECASE)
+PRECO_RE = re.compile(r"(?:EUR|BRL|R\$|USD|\$|\u20ac)\s*((?:[0-9]{1,3}(?:[.,][0-9]{3})+|[0-9]+)(?:[.,][0-9]{1,2})?)", re.IGNORECASE)
 
 
 def carregar_config(caminho: Path) -> dict:
@@ -53,6 +55,29 @@ def data_para_busca(rota: dict, prefixo: str) -> str:
     return inicio or fim or ""
 
 
+def datas_da_rota(rota: dict, prefixo: str) -> list[str]:
+    data_fixa = rota.get(f"data_{prefixo}", "")
+    if data_fixa:
+        return [validar_data(data_fixa, f"data_{prefixo}")]
+
+    inicio = validar_data_se_preenchida(rota.get(f"data_{prefixo}_inicio", ""), f"data_{prefixo}_inicio")
+    fim = validar_data_se_preenchida(rota.get(f"data_{prefixo}_fim", ""), f"data_{prefixo}_fim")
+    if not inicio and not fim:
+        return []
+
+    inicio_dt = datetime.strptime(inicio or fim, "%Y-%m-%d")
+    fim_dt = datetime.strptime(fim or inicio, "%Y-%m-%d")
+    if fim_dt < inicio_dt:
+        raise ValueError(f"data_{prefixo}_fim deve ser maior ou igual a data_{prefixo}_inicio.")
+
+    datas = []
+    atual = inicio_dt
+    while atual <= fim_dt:
+        datas.append(atual.strftime("%Y-%m-%d"))
+        atual += timedelta(days=1)
+    return datas
+
+
 def montar_pedido(config: dict, rota: dict) -> PedidoViagem:
     return PedidoViagem(
         origem=rota["origem"],
@@ -70,6 +95,22 @@ def normalizar_preco(valor: str) -> float:
     return float(valor.replace(".", "").replace(",", "."))
 
 
+def normalizar_preco_generico(valor: object) -> float | None:
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    if not isinstance(valor, str):
+        return None
+
+    match = PRECO_RE.search(valor)
+    numero = match.group(1) if match else re.sub(r"[^0-9,.]", "", valor)
+    if not numero:
+        return None
+    try:
+        return normalizar_preco(numero)
+    except ValueError:
+        return None
+
+
 def buscar_precos_em_url(url: str, timeout: int = 20) -> list[float]:
     requisicao = urllib.request.Request(
         url,
@@ -83,8 +124,83 @@ def buscar_precos_em_url(url: str, timeout: int = 20) -> list[float]:
     return sorted({normalizar_preco(match) for match in PRECO_RE.findall(html)})
 
 
-def consultar_fontes(pedido: PedidoViagem, consultar_web: bool) -> list[dict]:
+def extrair_precos_json(valor: object) -> list[float]:
+    precos = []
+    if isinstance(valor, dict):
+        for chave, conteudo in valor.items():
+            if chave in {"price", "total_price"}:
+                preco = normalizar_preco_generico(conteudo)
+                if preco is not None:
+                    precos.append(preco)
+            precos.extend(extrair_precos_json(conteudo))
+    elif isinstance(valor, list):
+        for item in valor:
+            precos.extend(extrair_precos_json(item))
+    return precos
+
+
+def consultar_serpapi_voos(pedido: PedidoViagem, rota: dict, moeda: str, api_key: str) -> list[dict]:
+    origem = cidade_conhecida(pedido.origem)
+    destino = cidade_conhecida(pedido.destino)
+    if not origem or not destino or rota_interna_italia(origem, destino):
+        return []
+
+    idas = datas_da_rota(rota, "ida")
+    voltas = datas_da_rota(rota, "volta") or [""]
+    max_consultas = int(rota.get("max_consultas_serpapi", 12))
     resultados = []
+
+    for data_ida in idas:
+        for data_volta in voltas:
+            if len(resultados) >= max_consultas:
+                return resultados
+
+            parametros = {
+                "engine": "google_flights",
+                "departure_id": origem["iata"],
+                "arrival_id": destino["iata"],
+                "outbound_date": data_ida,
+                "currency": moeda,
+                "hl": "pt",
+                "gl": "br",
+                "num_adults": str(pedido.viajantes),
+                "api_key": api_key,
+            }
+            if data_volta:
+                parametros["return_date"] = data_volta
+                parametros["type"] = "1"
+            else:
+                parametros["type"] = "2"
+
+            url = "https://serpapi.com/search.json?" + urlencode(parametros)
+            item = {
+                "fonte": "SerpApi Google Flights",
+                "url": url.replace(api_key, "***"),
+                "precos": [],
+                "erro": "",
+                "data_ida": data_ida,
+                "data_volta": data_volta,
+            }
+
+            try:
+                with urllib.request.urlopen(url, timeout=40) as resposta:
+                    dados = json.loads(resposta.read().decode("utf-8"))
+                if "error" in dados:
+                    item["erro"] = str(dados["error"])
+                item["precos"] = sorted(set(extrair_precos_json(dados)))[:10]
+            except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+                item["erro"] = str(exc)
+
+            resultados.append(item)
+
+    return resultados
+
+
+def consultar_fontes(pedido: PedidoViagem, rota: dict, moeda: str, consultar_web: bool, serpapi_key: str) -> list[dict]:
+    resultados = []
+    if serpapi_key:
+        resultados.extend(consultar_serpapi_voos(pedido, rota, moeda, serpapi_key))
+
     for nome, url in montar_links(pedido).items():
         item = {"fonte": nome, "url": url, "precos": [], "erro": ""}
 
@@ -106,11 +222,12 @@ def montar_dados_monitoramento(config: dict, consultar_web: bool) -> dict:
         "rotas": [],
         "alertas": [],
     }
+    serpapi_key = os.getenv("SERPAPI_API_KEY", "")
 
     for rota in rotas:
         pedido = montar_pedido(config, rota)
         modal, motivos = escolher_modal(pedido)
-        fontes = consultar_fontes(pedido, consultar_web)
+        fontes = consultar_fontes(pedido, rota, dados["moeda"], consultar_web, serpapi_key)
         precos = [preco for fonte in fontes for preco in fonte["precos"]]
         menor_preco = min(precos) if precos else None
         preco_alvo = rota.get("preco_alvo")
