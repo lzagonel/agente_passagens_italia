@@ -251,6 +251,29 @@ def consultar_fontes(pedido: PedidoViagem, rota: dict, moeda: str, consultar_web
     return resultados
 
 
+def link_google_flights_iata(origem_iata: str, destino_iata: str, data_ida: str, data_volta: str) -> str:
+    consulta = f"{origem_iata} to {destino_iata} {data_ida}"
+    if data_volta:
+        consulta += f" return {data_volta}"
+    return "https://www.google.com/travel/flights?q=" + urlencode({"": consulta})[1:]
+
+
+def adicionar_links_melhores_opcoes(pedido: PedidoViagem, opcoes: list[dict]) -> list[dict]:
+    origem = cidade_conhecida(pedido.origem)
+    destino = cidade_conhecida(pedido.destino)
+    if not origem or not destino:
+        return opcoes
+
+    for opcao in opcoes:
+        opcao["link"] = link_google_flights_iata(
+            origem["iata"],
+            destino["iata"],
+            opcao["data_ida"],
+            opcao["data_volta"],
+        )
+    return opcoes
+
+
 def montar_dados_monitoramento(config: dict, consultar_web: bool) -> dict:
     rotas = [rota for rota in config.get("rotas", []) if rota.get("ativa", True)]
     dados = {
@@ -267,7 +290,7 @@ def montar_dados_monitoramento(config: dict, consultar_web: bool) -> dict:
         fontes = consultar_fontes(pedido, rota, dados["moeda"], consultar_web, serpapi_key)
         precos = [preco for fonte in fontes for preco in fonte["precos"]]
         opcoes = [opcao for fonte in fontes for opcao in fonte.get("opcoes", [])]
-        opcoes_ordenadas = sorted(opcoes, key=lambda opcao: opcao["preco"])
+        opcoes_ordenadas = adicionar_links_melhores_opcoes(pedido, sorted(opcoes, key=lambda opcao: opcao["preco"]))
         menor_preco = min(precos) if precos else None
         preco_alvo = rota.get("preco_alvo")
         alerta = bool(menor_preco is not None and preco_alvo is not None and menor_preco <= float(preco_alvo))
@@ -363,6 +386,8 @@ def gerar_relatorio_monitoramento(config: dict, consultar_web: bool = False) -> 
                     f"   {posicao}. {moeda} {opcao['preco']:.2f} | ida {opcao['data_ida']}{volta} | "
                     f"{opcao['escalas']} escala(s) | {opcao['companhias']}{duracao}"
                 )
+                if opcao.get("link"):
+                    linhas.append(f"      Link: {opcao['link']}")
 
         linhas.append("")
 
