@@ -201,10 +201,11 @@ def consultar_fontes(pedido: PedidoViagem, rota: dict, moeda: str, consultar_web
     if serpapi_key:
         resultados.extend(consultar_serpapi_voos(pedido, rota, moeda, serpapi_key))
 
+    fontes_com_html_confiavel = set(rota.get("fontes_html_confiaveis", []))
     for nome, url in montar_links(pedido).items():
         item = {"fonte": nome, "url": url, "precos": [], "erro": ""}
 
-        if consultar_web:
+        if consultar_web and nome in fontes_com_html_confiavel:
             try:
                 item["precos"] = buscar_precos_em_url(url)[:5]
             except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
