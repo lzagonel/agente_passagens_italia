@@ -14,7 +14,7 @@
       "data_ida_fim": "2026-08-30",
       "data_volta_inicio": "2026-09-10",
       "data_volta_fim": "2026-09-15",
-      "preco_alvo": 5500,
+      "preco_alvo": 9000,
       "max_escalas": 1,
       "max_opcoes_relatorio": 3,
       "max_consultas_serpapi": 12,
